@@ -197,6 +197,27 @@ def write_output(rows: list[dict[str, Any]], out_path: Path) -> None:
         raise ValueError("Output file extension must be .csv, .xlsx or .xls")
 
 
+def run_parser(
+    input_path: Path,
+    output_path: Path,
+    force_ocr: bool = False,
+    profile_config: Path | None = None,
+    profile_name: str | None = None,
+) -> int:
+    profile = load_profile(profile_config, profile_name)
+
+    rows = parse_ocr_pdf(input_path, profile) if force_ocr else parse_text_pdf(input_path, profile)
+    if not rows and not force_ocr:
+        rows = parse_ocr_pdf(input_path, profile)
+
+    rows = deduplicate(rows)
+    if not rows:
+        raise ValueError("No transactions found. Try --ocr or adjust profile regexes.")
+
+    write_output(rows, output_path)
+    return len(rows)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Parse bank statement PDF to CSV/XLSX")
     parser.add_argument("input", type=Path, help="Path to source PDF")
@@ -206,18 +227,14 @@ def main() -> None:
     parser.add_argument("--profile", type=str, help="Profile name from YAML (default: default)")
     args = parser.parse_args()
 
-    profile = load_profile(args.profile_config, args.profile)
-
-    rows = parse_ocr_pdf(args.input, profile) if args.ocr else parse_text_pdf(args.input, profile)
-    if not rows and not args.ocr:
-        rows = parse_ocr_pdf(args.input, profile)
-
-    rows = deduplicate(rows)
-    if not rows:
-        raise SystemExit("No transactions found. Try --ocr or adjust profile regexes.")
-
-    write_output(rows, args.output)
-    print(f"Parsed {len(rows)} transactions -> {args.output}")
+    parsed_count = run_parser(
+        input_path=args.input,
+        output_path=args.output,
+        force_ocr=args.ocr,
+        profile_config=args.profile_config,
+        profile_name=args.profile,
+    )
+    print(f"Parsed {parsed_count} transactions -> {args.output}")
 
 
 if __name__ == "__main__":
