@@ -191,10 +191,10 @@ def write_output(rows: list[dict[str, Any]], out_path: Path) -> None:
     df = pd.DataFrame(rows, columns=["date", "description", "amount", "balance", "operation_type"])
     if out_path.suffix.lower() == ".csv":
         df.to_csv(out_path, index=False, quoting=csv.QUOTE_MINIMAL)
-    elif out_path.suffix.lower() in {".xlsx", ".xls"}:
+    elif out_path.suffix.lower() == ".xlsx":
         df.to_excel(out_path, index=False)
     else:
-        raise ValueError("Output file extension must be .csv, .xlsx or .xls")
+        raise ValueError("Output file extension must be .csv or .xlsx")
 
 
 def main() -> None:
