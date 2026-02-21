@@ -38,6 +38,10 @@ class ParserProfile:
     date_format: str = "%d.%m.%Y"
     decimal_sep: str = ","
     thousands_sep: str = " "
+    ocr_lang: str = "ukr+eng+deu"
+    amount_strategy: str = "last"
+    debit_credit_order: str = "debit_credit"
+    transaction_type_regex: str | None = None
 
 
 DEFAULT_PROFILE = ParserProfile(
@@ -97,6 +101,57 @@ def guess_operation_type(description: str, amount: float | None, profile: Parser
     return "unknown"
 
 
+def extract_transaction_type(line: str, profile: ParserProfile) -> str:
+    if not profile.transaction_type_regex:
+        return ""
+    match = re.search(profile.transaction_type_regex, line, re.IGNORECASE)
+    if not match:
+        return ""
+    if "type" in match.groupdict():
+        return match.group("type").strip()
+    if match.groups():
+        return match.group(1).strip()
+    return match.group(0).strip()
+
+
+def pick_amount(values: list[float], line: str, profile: ParserProfile) -> float | None:
+    if not values:
+        return None
+    if profile.amount_strategy == "first":
+        return values[0]
+    if profile.amount_strategy == "debit_credit" and len(values) >= 2:
+        debit_value, credit_value = values[0], values[1]
+        if profile.debit_credit_order == "credit_debit":
+            credit_value, debit_value = values[0], values[1]
+        if abs(debit_value) > 0:
+            return -abs(debit_value)
+        if abs(credit_value) > 0:
+            return abs(credit_value)
+    if any(k in line.lower() for k in profile.debit_keywords):
+        return -abs(values[-1])
+    if any(k in line.lower() for k in profile.credit_keywords):
+        return abs(values[-1])
+    return values[-1]
+
+
+def lines_to_candidate_rows(lines: list[str], date_regex: str) -> list[str]:
+    grouped: list[str] = []
+    current: list[str] = []
+    for raw in lines:
+        line = re.sub(r"\s+", " ", raw).strip()
+        if not line:
+            continue
+        if re.search(date_regex, line):
+            if current:
+                grouped.append(" ".join(current))
+            current = [line]
+        elif current:
+            current.append(line)
+    if current:
+        grouped.append(" ".join(current))
+    return grouped
+
+
 def row_to_transaction(cells: list[str], profile: ParserProfile) -> dict[str, Any] | None:
     line = " | ".join(c for c in cells if c).strip()
     if not line:
@@ -108,10 +163,15 @@ def row_to_transaction(cells: list[str], profile: ParserProfile) -> dict[str, An
         return None
 
     date = date_match.group(0)
-    amount = normalize_number(amount_matches[-1], profile.decimal_sep, profile.thousands_sep)
+    parsed_amounts = [
+        normalize_number(value, profile.decimal_sep, profile.thousands_sep)
+        for value in amount_matches
+    ]
+    numeric_amounts = [value for value in parsed_amounts if value is not None]
+    amount = pick_amount(numeric_amounts, line, profile)
     balance = None
-    if len(amount_matches) > 1:
-        balance = normalize_number(amount_matches[-2], profile.decimal_sep, profile.thousands_sep)
+    if len(numeric_amounts) > 1:
+        balance = numeric_amounts[-2]
 
     description = line.replace(date, "", 1)
     if amount_matches:
@@ -120,10 +180,12 @@ def row_to_transaction(cells: list[str], profile: ParserProfile) -> dict[str, An
         description = description.replace(amount_matches[-2], "", 1)
 
     description = re.sub(r"\s+", " ", description).strip(" |-")
+    transaction_type = extract_transaction_type(description, profile)
     op_type = guess_operation_type(description, amount, profile)
 
     return {
         "date": date,
+        "transaction_type": transaction_type,
         "description": description,
         "amount": amount,
         "balance": balance,
@@ -151,7 +213,7 @@ def parse_text_pdf(pdf_path: Path, profile: ParserProfile) -> list[dict[str, Any
                 continue
 
             text = page.extract_text() or ""
-            for line in text.splitlines():
+            for line in lines_to_candidate_rows(text.splitlines(), profile.date_regex):
                 tx = row_to_transaction([line], profile)
                 if tx:
                     rows.append(tx)
@@ -165,8 +227,8 @@ def parse_ocr_pdf(pdf_path: Path, profile: ParserProfile, dpi: int = 300) -> lis
         for page in pdf.pages:
             rendered = page.to_image(resolution=dpi).original
             pil_image = rendered if isinstance(rendered, Image.Image) else Image.fromarray(rendered)
-            text = pytesseract.image_to_string(pil_image, lang="ukr+eng")
-            for line in text.splitlines():
+            text = pytesseract.image_to_string(pil_image, lang=profile.ocr_lang)
+            for line in lines_to_candidate_rows(text.splitlines(), profile.date_regex):
                 tx = row_to_transaction([line], profile)
                 if tx:
                     rows.append(tx)
@@ -176,8 +238,8 @@ def parse_ocr_pdf(pdf_path: Path, profile: ParserProfile, dpi: int = 300) -> lis
 def parse_ocr_image(image_path: Path, profile: ParserProfile) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     with Image.open(image_path) as image:
-        text = pytesseract.image_to_string(image, lang="ukr+eng")
-    for line in text.splitlines():
+        text = pytesseract.image_to_string(image, lang=profile.ocr_lang)
+    for line in lines_to_candidate_rows(text.splitlines(), profile.date_regex):
         tx = row_to_transaction([line], profile)
         if tx:
             rows.append(tx)
@@ -190,6 +252,7 @@ def deduplicate(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     for row in rows:
         key = (
             row.get("date"),
+            row.get("transaction_type"),
             row.get("description"),
             row.get("amount"),
             row.get("balance"),
@@ -203,7 +266,10 @@ def deduplicate(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def write_output(rows: list[dict[str, Any]], out_path: Path) -> None:
-    df = pd.DataFrame(rows, columns=["date", "description", "amount", "balance", "operation_type"])
+    df = pd.DataFrame(
+        rows,
+        columns=["date", "transaction_type", "description", "amount", "balance", "operation_type"],
+    )
     if out_path.suffix.lower() == ".csv":
         df.to_csv(out_path, index=False, quoting=csv.QUOTE_MINIMAL)
     elif out_path.suffix.lower() in {".xlsx", ".xls"}:
