@@ -49,6 +49,20 @@ python statement_parser.py statement.pdf result.csv
 python statement_parser.py statement_scan.pdf result.xlsx --ocr
 ```
 
+### GUI (Tkinter)
+
+Запуск графічного інтерфейсу:
+
+```bat
+python statement_parser_gui.py
+```
+
+У GUI можна:
+- обрати вхідний PDF,
+- вказати вихідний файл `.csv` або `.xlsx`,
+- увімкнути OCR,
+- задати YAML-конфіг і назву профілю.
+
 ## Профілі банків (адаптація)
 
 1. Скопіюйте приклад:
