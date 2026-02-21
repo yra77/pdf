@@ -134,6 +134,41 @@ def pick_amount(values: list[float], line: str, profile: ParserProfile) -> float
     return values[-1]
 
 
+def resolve_amount_balance(
+    numeric_amounts: list[float],
+    line: str,
+    profile: ParserProfile,
+) -> tuple[float | None, float | None, set[int]]:
+    if not numeric_amounts:
+        return None, None, set()
+
+    if profile.amount_strategy == "debit_credit":
+        amount_values = numeric_amounts[:2]
+        amount = pick_amount(amount_values, line, profile)
+        used = {0, 1} if len(numeric_amounts) >= 2 else {0}
+        balance = numeric_amounts[2] if len(numeric_amounts) >= 3 else None
+        if len(numeric_amounts) >= 3:
+            used.add(2)
+        return amount, balance, used
+
+    amount = pick_amount(numeric_amounts, line, profile)
+
+    if profile.amount_strategy == "first":
+        amount_index = 0
+        balance_index = len(numeric_amounts) - 1 if len(numeric_amounts) > 1 else None
+    else:
+        amount_index = len(numeric_amounts) - 1
+        balance_index = len(numeric_amounts) - 2 if len(numeric_amounts) > 1 else None
+
+    used = {amount_index}
+    balance = None
+    if balance_index is not None and balance_index != amount_index:
+        balance = numeric_amounts[balance_index]
+        used.add(balance_index)
+
+    return amount, balance, used
+
+
 def lines_to_candidate_rows(lines: list[str], date_regex: str) -> list[str]:
     grouped: list[str] = []
     current: list[str] = []
@@ -158,26 +193,30 @@ def row_to_transaction(cells: list[str], profile: ParserProfile) -> dict[str, An
         return None
 
     date_match = re.search(profile.date_regex, line)
-    amount_matches = re.findall(profile.amount_regex, line)
-    if not date_match or not amount_matches:
+    if not date_match:
         return None
 
     date = date_match.group(0)
-    parsed_amounts = [
-        normalize_number(value, profile.decimal_sep, profile.thousands_sep)
-        for value in amount_matches
-    ]
-    numeric_amounts = [value for value in parsed_amounts if value is not None]
-    amount = pick_amount(numeric_amounts, line, profile)
-    balance = None
-    if len(numeric_amounts) > 1:
-        balance = numeric_amounts[-2]
+    date_start, date_end = date_match.span()
+    parsed_matches: list[tuple[re.Match[str], float]] = []
+    for match in re.finditer(profile.amount_regex, line):
+        start, end = match.span()
+        if start < date_end and end > date_start:
+            continue
+        parsed = normalize_number(match.group(0), profile.decimal_sep, profile.thousands_sep)
+        if parsed is not None:
+            parsed_matches.append((match, parsed))
+
+    if not parsed_matches:
+        return None
+
+    numeric_amounts = [value for _, value in parsed_matches]
+    amount, balance, used_indexes = resolve_amount_balance(numeric_amounts, line, profile)
 
     description = line.replace(date, "", 1)
-    if amount_matches:
-        description = description.replace(amount_matches[-1], "", 1)
-    if len(amount_matches) > 1:
-        description = description.replace(amount_matches[-2], "", 1)
+    for idx in sorted(used_indexes, reverse=True):
+        if 0 <= idx < len(parsed_matches):
+            description = description.replace(parsed_matches[idx][0].group(0), "", 1)
 
     description = re.sub(r"\s+", " ", description).strip(" |-")
     transaction_type = extract_transaction_type(description, profile)
