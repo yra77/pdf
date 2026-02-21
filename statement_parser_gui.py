@@ -32,7 +32,7 @@ class ParserGUI(tk.Tk):
         frame.pack(fill="both", expand=True)
         frame.columnconfigure(1, weight=1)
 
-        ttk.Label(frame, text="Вхідний PDF:").grid(row=0, column=0, sticky="w", pady=6)
+        ttk.Label(frame, text="Вхідний файл (PDF/JPG/PNG):").grid(row=0, column=0, sticky="w", pady=6)
         ttk.Entry(frame, textvariable=self.input_var).grid(row=0, column=1, sticky="ew", pady=6, padx=8)
         ttk.Button(frame, text="Обрати...", command=self._pick_input).grid(row=0, column=2, pady=6)
 
@@ -62,7 +62,12 @@ class ParserGUI(tk.Tk):
     def _pick_input(self) -> None:
         selected = filedialog.askopenfilename(
             title="Оберіть PDF",
-            filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")],
+            filetypes=[
+                ("Supported files", "*.pdf *.jpg *.jpeg *.png"),
+                ("PDF files", "*.pdf"),
+                ("Image files", "*.jpg *.jpeg *.png"),
+                ("All files", "*.*"),
+            ],
         )
         if selected:
             self.input_var.set(selected)
@@ -94,7 +99,7 @@ class ParserGUI(tk.Tk):
         profile_name = self.profile_name_var.get().strip() or "default"
 
         if not input_path.exists():
-            messagebox.showerror("Помилка", "Вкажіть коректний вхідний PDF файл.")
+            messagebox.showerror("Помилка", "Вкажіть коректний вхідний файл (PDF/JPG/PNG).")
             return
 
         if output_path.suffix.lower() not in {".csv", ".xlsx", ".xls"}:

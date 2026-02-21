@@ -1,12 +1,12 @@
 # PDF Bank Statement Parser (offline)
 
-Локальний скрипт для **Windows** (також працює на Linux/macOS), який перетворює банківські PDF-виписки у структурований `CSV`/`Excel`.
+Локальний скрипт для **Windows** (також працює на Linux/macOS), який перетворює банківські PDF/JPG/PNG-виписки у структурований `CSV`/`Excel`.
 
 ## Що вміє
 - Працює **офлайн** (без онлайн-сервісів).
 - Підтримує:
   - **текстові PDF** (через `pdfplumber`),
-  - **скани PDF** (через OCR `pytesseract`).
+  - **скани PDF/JPG/PNG** (через OCR `pytesseract`).
 - Нормалізує результат до полів:
   - `date`
   - `description`
@@ -47,6 +47,7 @@ run_parser.bat statement_scan.pdf result.xlsx --ocr
 ```bat
 python statement_parser.py statement.pdf result.csv
 python statement_parser.py statement_scan.pdf result.xlsx --ocr
+python statement_parser.py statement_photo.jpg result.csv
 ```
 
 ### GUI (Tkinter)
@@ -58,7 +59,7 @@ python statement_parser_gui.py
 ```
 
 У GUI можна:
-- обрати вхідний PDF,
+- обрати вхідний PDF/JPG/PNG,
 - вказати вихідний файл `.csv` або `.xlsx`,
 - увімкнути OCR,
 - задати YAML-конфіг і назву профілю.
@@ -80,8 +81,8 @@ python statement_parser.py statement.pdf result.csv --profile-config bank_profil
 
 ## Як це працює
 
-1. Скрипт пробує витягти таблиці/рядки з PDF (`pdfplumber`).
-2. Якщо транзакції не знайдені або увімкнено `--ocr`, включається OCR (`pytesseract`).
+1. Для PDF скрипт пробує витягти таблиці/рядки (`pdfplumber`).
+2. Для JPG/PNG (або якщо увімкнено `--ocr`) використовується OCR (`pytesseract`).
 3. Рядки нормалізуються регулярними виразами та перетворюються в таблицю `pandas`.
 4. Експорт у `.csv` або `.xlsx`.
 

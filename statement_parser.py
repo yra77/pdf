@@ -23,6 +23,10 @@ import pytesseract
 import yaml
 from PIL import Image
 
+SUPPORTED_PDF_SUFFIXES = {".pdf"}
+SUPPORTED_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
+SUPPORTED_INPUT_SUFFIXES = SUPPORTED_PDF_SUFFIXES | SUPPORTED_IMAGE_SUFFIXES
+
 
 @dataclass
 class ParserProfile:
@@ -169,6 +173,17 @@ def parse_ocr_pdf(pdf_path: Path, profile: ParserProfile, dpi: int = 300) -> lis
     return rows
 
 
+def parse_ocr_image(image_path: Path, profile: ParserProfile) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    with Image.open(image_path) as image:
+        text = pytesseract.image_to_string(image, lang="ukr+eng")
+    for line in text.splitlines():
+        tx = row_to_transaction([line], profile)
+        if tx:
+            rows.append(tx)
+    return rows
+
+
 def deduplicate(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     seen: set[tuple[Any, ...]] = set()
     result: list[dict[str, Any]] = []
@@ -205,10 +220,17 @@ def run_parser(
     profile_name: str | None = None,
 ) -> int:
     profile = load_profile(profile_config, profile_name)
+    input_suffix = input_path.suffix.lower()
 
-    rows = parse_ocr_pdf(input_path, profile) if force_ocr else parse_text_pdf(input_path, profile)
-    if not rows and not force_ocr:
-        rows = parse_ocr_pdf(input_path, profile)
+    if input_suffix not in SUPPORTED_INPUT_SUFFIXES:
+        raise ValueError("Input file extension must be .pdf, .jpg, .jpeg or .png")
+
+    if input_suffix in SUPPORTED_IMAGE_SUFFIXES:
+        rows = parse_ocr_image(input_path, profile)
+    else:
+        rows = parse_ocr_pdf(input_path, profile) if force_ocr else parse_text_pdf(input_path, profile)
+        if not rows and not force_ocr:
+            rows = parse_ocr_pdf(input_path, profile)
 
     rows = deduplicate(rows)
     if not rows:
@@ -219,8 +241,8 @@ def run_parser(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Parse bank statement PDF to CSV/XLSX")
-    parser.add_argument("input", type=Path, help="Path to source PDF")
+    parser = argparse.ArgumentParser(description="Parse bank statement PDF/JPG/PNG to CSV/XLSX")
+    parser.add_argument("input", type=Path, help="Path to source PDF/JPG/PNG")
     parser.add_argument("output", type=Path, help="Path to destination .csv/.xlsx")
     parser.add_argument("--ocr", action="store_true", help="Force OCR mode (for scanned PDFs)")
     parser.add_argument("--profile-config", type=Path, help="YAML file with bank profiles")
