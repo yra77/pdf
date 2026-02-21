@@ -9,6 +9,7 @@
   - **скани PDF/JPG/PNG** (через OCR `pytesseract`).
 - Нормалізує результат до полів:
   - `date`
+  - `transaction_type`
   - `description`
   - `amount`
   - `balance`
@@ -20,7 +21,7 @@
 1. Встановіть Python 3.10+.
 2. Встановіть Tesseract OCR:
    - завантажте інсталятор: <https://github.com/UB-Mannheim/tesseract/wiki>
-   - під час інсталяції додайте мови `Ukrainian` + `English`.
+   - під час інсталяції додайте мови `Ukrainian` + `English` + `German` (або налаштуйте `ocr_lang` у профілі).
 3. (Рекомендовано) Додайте `tesseract.exe` в `PATH`.
 4. Встановіть залежності:
 
@@ -78,6 +79,14 @@ copy bank_profiles.example.yaml bank_profiles.yaml
 ```bat
 python statement_parser.py statement.pdf result.csv --profile-config bank_profiles.yaml --profile default
 ```
+
+
+## Підтримка різних форматів банків
+
+- Для виписок з колонками `debit/credit` використайте профіль з `amount_strategy: debit_credit`.
+- Для виписок, де суми мають знак `-`, залишайте `amount_strategy: last` (за замовчуванням).
+- Для OCR мову можна задавати у профілі через `ocr_lang`, наприклад `ukr+eng+deu`.
+- Багаторядкові описи транзакцій обʼєднуються автоматично в один запис, якщо рядок продовжується без нової дати.
 
 ## Як це працює
 

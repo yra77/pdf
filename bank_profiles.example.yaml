@@ -8,7 +8,15 @@ profiles:
     date_format: "%d.%m.%Y"
     decimal_sep: ","
     thousands_sep: " "
+    ocr_lang: "ukr+eng+deu"
+    amount_strategy: "last" # last | first | debit_credit
+    debit_credit_order: "debit_credit" # debit_credit | credit_debit
+    transaction_type_regex: "^(?P<type>[A-Za-zА-Яа-яІіЇїЄєҐґ0-9 /_-]{3,40})"
 
   monobank_like:
     debit_keywords: ["переказ", "покупка", "комісія"]
     credit_keywords: ["поповнення", "зарахування", "кешбек"]
+
+  debit_credit_table_example:
+    amount_strategy: "debit_credit"
+    debit_credit_order: "debit_credit"
